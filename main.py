@@ -261,9 +261,9 @@ class Game:
                 elif event.type == pygame.JOYBUTTONDOWN:
                     player = self.players.get(event.instance_id)
                     if player:
-                        # 0: A (BTN_SOUTH), 1: B (BTN_EAST), 2: START, 3: SELECT
+                        # 0: A (BTN_SOUTH), 1: B (BTN_EAST), 2: SELECT, 3: START
                         if self.state == "MENU":
-                            if event.button == 2: # START BUTTON is mapped to index 2
+                            if event.button == 3: # <--- CHANGED TO 3 (START)
                                 player.ready = not player.ready
                         
                         elif self.state == "PLAYING" and player.alive:
@@ -273,7 +273,7 @@ class Game:
                                 player.rotate_piece()
                                 
                         elif self.state == "LEADERBOARD":
-                            if event.button == 2: # START BUTTON (Return to Menu)
+                            if event.button == 3: # <--- CHANGED TO 3 (START)
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
