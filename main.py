@@ -60,7 +60,7 @@ class PlayerBoard:
         self.piece_y = 0
         
         if self.check_collision(0, 0, self.current_piece):
-            self.alive = False # Game Over for this player
+            self.alive = False # Game Over
 
     def check_collision(self, dx, dy, shape):
         for y, row in enumerate(shape):
@@ -102,7 +102,6 @@ class PlayerBoard:
             new_board.insert(0, [0 for _ in range(GRID_W)])
         self.board = new_board
         
-        # Scoring System
         if lines_cleared == 1: self.score += 100
         elif lines_cleared == 2: self.score += 300
         elif lines_cleared == 3: self.score += 500
@@ -111,7 +110,6 @@ class PlayerBoard:
     def update(self, dt):
         if not self.alive: return
 
-        # Gravity
         self.fall_time += dt
         if self.fall_time >= self.fall_speed:
             self.fall_time = 0
@@ -120,37 +118,30 @@ class PlayerBoard:
             else:
                 self.lock_piece()
 
-        # Handle Continuous Analog Axis Inputs (D-Pad mapped to ABS_X / ABS_Y)
         self.move_cooldown -= dt
         if self.move_cooldown <= 0:
-            axis_x = self.joystick.get_axis(0) # Linux ABS_X
-            axis_y = self.joystick.get_axis(1) # Linux ABS_Y
+            # Polling axes
+            axis_x = self.joystick.get_axis(0)
+            axis_y = self.joystick.get_axis(1)
             
-            # Pygame normalizes 0-255 to -1.0 to 1.0. 
-            # Evdev < 64 becomes Pygame < -0.5. Evdev > 192 becomes Pygame > 0.5.
-            
-            # X-Axis: 0 is Left, 255 is Right
+            # Left / Right
             if axis_x < -0.5 and not self.check_collision(-1, 0, self.current_piece):
                 self.piece_x -= 1
-                self.move_cooldown = 120 # 120ms delay before next movement tick
+                self.move_cooldown = 120
             elif axis_x > 0.5 and not self.check_collision(1, 0, self.current_piece):
                 self.piece_x += 1
                 self.move_cooldown = 120
                 
-            # Y-Axis: 0 is Up, 255 is Down (We only care about Down for soft drop)
+            # Down (Soft Drop)
             if axis_y > 0.5 and not self.check_collision(0, 1, self.current_piece): 
                 self.piece_y += 1
-                self.move_cooldown = 60 # Faster tick rate for downward dropping
+                self.move_cooldown = 60
 
     def draw(self, surface, x_offset, y_offset, cell_size, block_textures, font, small_font):
-        # Draw Board Background
         board_rect = pygame.Rect(x_offset, y_offset, GRID_W * cell_size, GRID_H * cell_size)
         pygame.draw.rect(surface, (20, 20, 20), board_rect)
-        
-        # Player Border
         pygame.draw.rect(surface, self.color, board_rect, 4) 
 
-        # Draw Locked Blocks
         for y in range(GRID_H):
             for x in range(GRID_W):
                 c_idx = self.board[y][x]
@@ -158,7 +149,6 @@ class PlayerBoard:
                     tex = pygame.transform.scale(block_textures[c_idx-1], (cell_size, cell_size))
                     surface.blit(tex, (x_offset + x * cell_size, y_offset + y * cell_size))
 
-        # Draw Current Piece
         if self.alive and self.current_piece:
             for y, row in enumerate(self.current_piece):
                 for x, cell in enumerate(row):
@@ -166,13 +156,11 @@ class PlayerBoard:
                         tex = pygame.transform.scale(block_textures[self.color_index-1], (cell_size, cell_size))
                         surface.blit(tex, (x_offset + (self.piece_x + x) * cell_size, y_offset + (self.piece_y + y) * cell_size))
 
-        # Names and Scores
         name_text = font.render(self.nickname, True, self.color)
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
-        # Next 3 Pieces Queue
         next_x = x_offset + (GRID_W * cell_size) + 10
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -183,7 +171,6 @@ class PlayerBoard:
                         surface.blit(tex, (next_x + x*(cell_size//2), next_y + y*(cell_size//2)))
             next_y += 4 * (cell_size // 2)
 
-        # Game Over Overlay
         if not self.alive:
             s = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
             s.fill((0, 0, 0, 180))
@@ -234,37 +221,17 @@ class Game:
             print(f"Error loading {filename}: {e}")
             return [pygame.Surface((32, 32)) for _ in range(8)]
 
-    def handle_joysticks(self):
-        count = pygame.joystick.get_count()
-        for i in range(count):
-            joy = pygame.joystick.Joystick(i)
-            if not joy.get_init(): joy.init()
-            name = joy.get_name()
-            jid = joy.get_instance_id()
-            
-            if name.startswith("Gamepad_") and jid not in self.players:
-                nick = name.replace("Gamepad_", "")
-                self.players[jid] = PlayerBoard(nick, joy, self.player_counter)
-                self.player_counter += 1
-
-        # Remove disconnected players
-        connected_ids = [pygame.joystick.Joystick(i).get_instance_id() for i in range(count)]
-        disconnected = [jid for jid in self.players if jid not in connected_ids]
-        for jid in disconnected:
-            del self.players[jid]
-
     def start_game(self):
         for p in self.players.values():
             p.reset()
         if self.playlist:
-            pygame.mixer.music.play(-1) # Loop music
+            pygame.mixer.music.play(-1)
         self.state = "PLAYING"
 
     def run(self):
         running = True
         while running:
             dt = self.clock.tick(FPS)
-            self.handle_joysticks()
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -272,22 +239,41 @@ class Game:
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
                 
-                # Handle Discrete Button Presses
+                # --- NEW HOTPLUG DEVICE DETECTION ---
+                elif event.type == pygame.JOYDEVICEADDED:
+                    joy = pygame.joystick.Joystick(event.device_index)
+                    name = joy.get_name()
+                    jid = joy.get_instance_id()
+                    
+                    if name.startswith("Gamepad_") and jid not in self.players:
+                        nick = name.replace("Gamepad_", "")
+                        self.players[jid] = PlayerBoard(nick, joy, self.player_counter)
+                        self.player_counter += 1
+                        print(f"[{nick}] Pad Connected!")
+                        
+                elif event.type == pygame.JOYDEVICEREMOVED:
+                    jid = event.instance_id
+                    if jid in self.players:
+                        print(f"[{self.players[jid].nickname}] Pad Disconnected!")
+                        del self.players[jid]
+
+                # --- CORRECTED BUTTON BINDINGS ---
                 elif event.type == pygame.JOYBUTTONDOWN:
                     player = self.players.get(event.instance_id)
                     if player:
+                        # 0: A (BTN_SOUTH), 1: B (BTN_EAST), 2: START, 3: SELECT
                         if self.state == "MENU":
-                            if event.button == 7: # BTN_START (Ready Toggle)
+                            if event.button == 2: # START BUTTON is mapped to index 2
                                 player.ready = not player.ready
                         
                         elif self.state == "PLAYING" and player.alive:
-                            if event.button == 0: # BTN_SOUTH (A Button)
+                            if event.button == 0: # A BUTTON (Insta Drop)
                                 player.hard_drop()
-                            elif event.button == 1: # BTN_EAST (B Button)
+                            elif event.button == 1: # B BUTTON (Rotate)
                                 player.rotate_piece()
                                 
                         elif self.state == "LEADERBOARD":
-                            if event.button == 7: # BTN_START (Return to Menu)
+                            if event.button == 2: # START BUTTON (Return to Menu)
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
