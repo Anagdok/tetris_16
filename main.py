@@ -9,18 +9,11 @@ FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# Tetromino Shapes
 SHAPES = [
-    [[1, 1, 1, 1]], # I 
-    [[1, 0, 0], [1, 1, 1]], # J
-    [[0, 0, 1], [1, 1, 1]], # L 
-    [[1, 1], [1, 1]], # O 
-    [[0, 1, 1], [1, 1, 0]], # S 
-    [[0, 1, 0], [1, 1, 1]], # T 
-    [[1, 1, 0], [0, 1, 1]]  # Z 
+    [[1, 1, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]],
+    [[1, 1], [1, 1]], [[0, 1, 1], [1, 1, 0]], [[0, 1, 0], [1, 1, 1]], [[1, 1, 0], [0, 1, 1]]
 ]
 
-# Player Border Colors
 PLAYER_COLORS = [
     (255, 50, 50), (50, 255, 50), (50, 50, 255), (255, 255, 50),
     (255, 50, 255), (50, 255, 255), (255, 150, 50), (150, 50, 255),
@@ -34,6 +27,12 @@ class PlayerBoard:
         self.joystick = joystick
         self.color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
         self.ready = False
+        
+        # Voting Flags
+        self.voted_quit = False
+        self.voted_yes = False
+        self.voted_no = False
+        
         self.reset()
 
     def reset(self):
@@ -45,7 +44,7 @@ class PlayerBoard:
         self.piece_x = GRID_W // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
         self.fall_time = 0
-        self.fall_speed = 500 # ms per drop
+        self.fall_speed = 500
         self.move_cooldown = 0
 
     def _generate_piece(self):
@@ -55,12 +54,11 @@ class PlayerBoard:
     def spawn_piece(self):
         self.current_piece, self.color_index = self.piece_queue.pop(0)
         self.piece_queue.append(self._generate_piece())
-        
         self.piece_x = GRID_W // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
         
         if self.check_collision(0, 0, self.current_piece):
-            self.alive = False # Game Over
+            self.alive = False
 
     def check_collision(self, dx, dy, shape):
         for y, row in enumerate(shape):
@@ -68,38 +66,32 @@ class PlayerBoard:
                 if cell:
                     new_x = self.piece_x + x + dx
                     new_y = self.piece_y + y + dy
-                    if new_x < 0 or new_x >= GRID_W or new_y >= GRID_H:
-                        return True
-                    if new_y >= 0 and self.board[new_y][new_x] != 0:
-                        return True
+                    if new_x < 0 or new_x >= GRID_W or new_y >= GRID_H: return True
+                    if new_y >= 0 and self.board[new_y][new_x] != 0: return True
         return False
 
     def rotate_piece(self):
         if not self.alive: return
         rotated = [list(row) for row in zip(*self.current_piece[::-1])]
-        if not self.check_collision(0, 0, rotated):
-            self.current_piece = rotated
+        if not self.check_collision(0, 0, rotated): self.current_piece = rotated
 
     def hard_drop(self):
         if not self.alive: return
-        while not self.check_collision(0, 1, self.current_piece):
-            self.piece_y += 1
+        while not self.check_collision(0, 1, self.current_piece): self.piece_y += 1
         self.lock_piece()
         self.fall_time = 0
 
     def lock_piece(self):
         for y, row in enumerate(self.current_piece):
             for x, cell in enumerate(row):
-                if cell:
-                    self.board[self.piece_y + y][self.piece_x + x] = self.color_index
+                if cell: self.board[self.piece_y + y][self.piece_x + x] = self.color_index
         self.clear_lines()
         self.spawn_piece()
 
     def clear_lines(self):
         new_board = [row for row in self.board if any(cell == 0 for cell in row)]
         lines_cleared = GRID_H - len(new_board)
-        for _ in range(lines_cleared):
-            new_board.insert(0, [0 for _ in range(GRID_W)])
+        for _ in range(lines_cleared): new_board.insert(0, [0 for _ in range(GRID_W)])
         self.board = new_board
         
         if lines_cleared == 1: self.score += 100
@@ -109,30 +101,23 @@ class PlayerBoard:
 
     def update(self, dt):
         if not self.alive: return
-
         self.fall_time += dt
         if self.fall_time >= self.fall_speed:
             self.fall_time = 0
-            if not self.check_collision(0, 1, self.current_piece):
-                self.piece_y += 1
-            else:
-                self.lock_piece()
+            if not self.check_collision(0, 1, self.current_piece): self.piece_y += 1
+            else: self.lock_piece()
 
         self.move_cooldown -= dt
         if self.move_cooldown <= 0:
-            # Polling axes
             axis_x = self.joystick.get_axis(0)
             axis_y = self.joystick.get_axis(1)
             
-            # Left / Right
             if axis_x < -0.5 and not self.check_collision(-1, 0, self.current_piece):
                 self.piece_x -= 1
                 self.move_cooldown = 120
             elif axis_x > 0.5 and not self.check_collision(1, 0, self.current_piece):
                 self.piece_x += 1
                 self.move_cooldown = 120
-                
-            # Down (Soft Drop)
             if axis_y > 0.5 and not self.check_collision(0, 1, self.current_piece): 
                 self.piece_y += 1
                 self.move_cooldown = 60
@@ -160,6 +145,11 @@ class PlayerBoard:
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
+
+        # Show if player voted to quit (only in normal states)
+        if self.voted_quit:
+            vote_text = small_font.render("VOTED QUIT", True, (255, 50, 50))
+            surface.blit(vote_text, (x_offset, y_offset - 60))
 
         next_x = x_offset + (GRID_W * cell_size) + 10
         next_y = y_offset
@@ -193,7 +183,9 @@ class Game:
         
         self.players = {}
         self.block_textures = self.load_blocks("blocks.png")
-        self.state = "MENU" # MENU, PLAYING, LEADERBOARD
+        
+        self.state = "MENU"
+        self.previous_state = "MENU" # To remember where to return after a prompt
         self.player_counter = 0
         
         self.load_music()
@@ -202,14 +194,11 @@ class Game:
         self.playlist = []
         if not os.path.exists('music'):
             os.makedirs('music')
-            print("Folder 'music' created. Drop MP3/OGG files there!")
         else:
             for file in os.listdir('music'):
                 if file.endswith(('.mp3', '.ogg', '.wav')):
                     self.playlist.append(os.path.join('music', file))
-        
-        if self.playlist:
-            pygame.mixer.music.load(self.playlist[0])
+        if self.playlist: pygame.mixer.music.load(self.playlist[0])
 
     def load_blocks(self, filename):
         try:
@@ -217,15 +206,18 @@ class Game:
             w, h = sheet.get_size()
             block_w = w // 8
             return [sheet.subsurface(pygame.Rect(i * block_w, 0, block_w, h)) for i in range(8)]
-        except Exception as e:
-            print(f"Error loading {filename}: {e}")
+        except:
             return [pygame.Surface((32, 32)) for _ in range(8)]
 
-    def start_game(self):
+    def reset_all_votes(self):
         for p in self.players.values():
-            p.reset()
-        if self.playlist:
-            pygame.mixer.music.play(-1)
+            p.voted_quit = False
+            p.voted_yes = False
+            p.voted_no = False
+
+    def start_game(self):
+        for p in self.players.values(): p.reset()
+        if self.playlist: pygame.mixer.music.play(-1)
         self.state = "PLAYING"
 
     def run(self):
@@ -239,7 +231,6 @@ class Game:
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
                 
-                # --- NEW HOTPLUG DEVICE DETECTION ---
                 elif event.type == pygame.JOYDEVICEADDED:
                     joy = pygame.joystick.Joystick(event.device_index)
                     name = joy.get_name()
@@ -249,62 +240,117 @@ class Game:
                         nick = name.replace("Gamepad_", "")
                         self.players[jid] = PlayerBoard(nick, joy, self.player_counter)
                         self.player_counter += 1
-                        print(f"[{nick}] Pad Connected!")
                         
                 elif event.type == pygame.JOYDEVICEREMOVED:
                     jid = event.instance_id
-                    if jid in self.players:
-                        print(f"[{self.players[jid].nickname}] Pad Disconnected!")
-                        del self.players[jid]
+                    if jid in self.players: del self.players[jid]
 
-                # --- CORRECTED BUTTON BINDINGS ---
                 elif event.type == pygame.JOYBUTTONDOWN:
                     player = self.players.get(event.instance_id)
-                    if player:
-                        # 0: A (BTN_SOUTH), 1: B (BTN_EAST), 2: SELECT, 3: START
-                        if self.state == "MENU":
-                            if event.button == 3: # <--- CHANGED TO 3 (START)
+                    if not player: continue
+                    
+                    # 0: A, 1: B, 2: SELECT, 3: START
+                    
+                    # --- GLOBAL VOTE SYSTEM (ACTIVE IN PROMPT) ---
+                    if self.state == "QUIT_PROMPT":
+                        if event.button == 2: # SELECT -> Vote Yes to Exit
+                            player.voted_yes = True
+                            player.voted_no = False
+                        elif event.button == 3: # START -> Vote No to Exit
+                            player.voted_no = True
+                            player.voted_yes = False
+                            
+                        # Check Confirm Results
+                        yes_votes = sum(1 for p in self.players.values() if p.voted_yes)
+                        no_votes = sum(1 for p in self.players.values() if p.voted_no)
+                        majority = len(self.players) // 2
+                        
+                        if yes_votes > majority:
+                            running = False # MAJORITY CONFIRMED EXIT
+                        elif no_votes >= majority: 
+                            self.state = self.previous_state # Cancel, resume game
+                            self.reset_all_votes()
+                            
+                    # --- NORMAL GAMEPLAY / MENU INPUTS ---
+                    else:
+                        if event.button == 2: # SELECT -> Initiate Quit Vote
+                            player.voted_quit = not player.voted_quit
+                            total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
+                            
+                            if total_quit_votes > len(self.players) // 2:
+                                self.previous_state = self.state
+                                self.state = "QUIT_PROMPT"
+                                self.reset_all_votes() # Clear initial votes for the confirmation screen
+                                
+                        elif self.state == "MENU":
+                            if event.button == 3: # START
                                 player.ready = not player.ready
                         
                         elif self.state == "PLAYING" and player.alive:
-                            if event.button == 0: # A BUTTON (Insta Drop)
-                                player.hard_drop()
-                            elif event.button == 1: # B BUTTON (Rotate)
-                                player.rotate_piece()
+                            if event.button == 0: player.hard_drop()
+                            elif event.button == 1: player.rotate_piece()
                                 
                         elif self.state == "LEADERBOARD":
-                            if event.button == 3: # <--- CHANGED TO 3 (START)
+                            if event.button == 3: # START
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
+            # --- RENDER LOGIC ---
             self.screen.fill((10, 10, 15))
 
-            if self.state == "MENU":
+            # Always draw the background state
+            if self.state in ["MENU", "QUIT_PROMPT"] and self.previous_state == "MENU":
                 self.draw_menu()
+            elif self.state in ["PLAYING", "QUIT_PROMPT"] and self.previous_state == "PLAYING":
+                if self.state != "QUIT_PROMPT": # Freeze logic if paused
+                    self.update_and_draw_playing(dt) 
+                else:
+                    self.update_and_draw_playing(0) # Pass 0 dt so pieces stop falling
+            elif self.state in ["LEADERBOARD", "QUIT_PROMPT"] and self.previous_state == "LEADERBOARD":
+                self.draw_leaderboard()
+
+            # State Logic Triggers
+            if self.state == "MENU":
                 if len(self.players) > 0 and all(p.ready for p in self.players.values()):
                     self.start_game()
-                    
             elif self.state == "PLAYING":
-                self.update_and_draw_playing(dt)
                 if len(self.players) > 0 and all(not p.alive for p in self.players.values()):
                     pygame.mixer.music.stop()
                     self.state = "LEADERBOARD"
-                    
-            elif self.state == "LEADERBOARD":
-                self.draw_leaderboard()
+
+            # Draw Overlay if Prompted
+            if self.state == "QUIT_PROMPT":
+                self.draw_quit_prompt()
 
             pygame.display.flip()
             
         pygame.quit()
         sys.exit()
 
+    def draw_quit_prompt(self):
+        s = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
+        s.fill((0, 0, 0, 200)) # Dark transparent overlay
+        self.screen.blit(s, (0, 0))
+        
+        y_center = BASE_HEIGHT // 2
+        
+        t1 = self.title_font.render("MAJORITY VOTED TO QUIT", True, (255, 50, 50))
+        t2 = self.font.render("Press SELECT to Confirm Exit. Press START to Cancel.", True, (255, 255, 255))
+        
+        self.screen.blit(t1, (BASE_WIDTH//2 - t1.get_width()//2, y_center - 100))
+        self.screen.blit(t2, (BASE_WIDTH//2 - t2.get_width()//2, y_center - 20))
+        
+        yes_votes = sum(1 for p in self.players.values() if p.voted_yes)
+        no_votes = sum(1 for p in self.players.values() if p.voted_no)
+        
+        v_text = self.font.render(f"CONFIRM EXIT: {yes_votes}   |   CANCEL: {no_votes}", True, (255, 215, 0))
+        self.screen.blit(v_text, (BASE_WIDTH//2 - v_text.get_width()//2, y_center + 50))
+
     def draw_menu(self):
         title = self.title_font.render("TETRIS LOBBY", True, (255, 255, 255))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        
-        info = self.font.render("Press START to ready up!", True, (150, 150, 150))
+        info = self.font.render("Press START to ready up! Press SELECT to vote quit.", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
-
         y = 300
         for p in self.players.values():
             status = "READY" if p.ready else "WAITING..."
@@ -317,37 +363,24 @@ class Game:
         num_players = max(1, len(self.players))
         cols = math.ceil(math.sqrt(num_players))
         rows = math.ceil(num_players / cols)
-        
         sw, sh = self.screen.get_size()
         cell_w, cell_h = sw // cols, sh // rows
-        
-        max_block_w = (cell_w - 100) // GRID_W 
-        max_block_h = (cell_h - 60) // GRID_H
-        block_size = min(max_block_w, max_block_h)
+        block_size = min((cell_w - 100) // GRID_W, (cell_h - 60) // GRID_H)
         
         for idx, player in enumerate(self.players.values()):
             player.update(dt)
-            
             grid_x, grid_y = idx % cols, idx // cols
-            board_w = GRID_W * block_size
-            board_h = GRID_H * block_size
-            
-            x_offset = (grid_x * cell_w) + (cell_w - board_w - 60) // 2 
-            y_offset = (grid_y * cell_h) + (cell_h - board_h) // 2 + 20
-            
+            x_offset = (grid_x * cell_w) + (cell_w - (GRID_W * block_size) - 60) // 2 
+            y_offset = (grid_y * cell_h) + (cell_h - (GRID_H * block_size)) // 2 + 20
             player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font)
 
     def draw_leaderboard(self):
         title = self.title_font.render("LEADERBOARD", True, (255, 215, 0))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        
         info = self.font.render("Press START to return to Lobby", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
-
-        sorted_players = sorted(self.players.values(), key=lambda p: p.score, reverse=True)
-        
         y = 300
-        for idx, p in enumerate(sorted_players):
+        for idx, p in enumerate(sorted(self.players.values(), key=lambda p: p.score, reverse=True)):
             color = (255, 215, 0) if idx == 0 else (200, 200, 200)
             text = self.font.render(f"{idx + 1}. {p.nickname} - Score: {p.score}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
