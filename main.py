@@ -4,12 +4,12 @@ import math
 import sys
 import os
 
-# --- KONFIGURACJA ---
+# --- CONFIGURATION ---
 FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# Klocki (Tetromino)
+# Tetromino Shapes
 SHAPES = [
     [[1, 1, 1, 1]], # I 
     [[1, 0, 0], [1, 1, 1]], # J
@@ -20,7 +20,7 @@ SHAPES = [
     [[1, 1, 0], [0, 1, 1]]  # Z 
 ]
 
-# Kolory ramek dla graczy
+# Player Border Colors
 PLAYER_COLORS = [
     (255, 50, 50), (50, 255, 50), (50, 50, 255), (255, 255, 50),
     (255, 50, 255), (50, 255, 255), (255, 150, 50), (150, 50, 255),
@@ -45,7 +45,7 @@ class PlayerBoard:
         self.piece_x = GRID_W // 2 - len(self.current_piece[0]) // 2
         self.piece_y = 0
         self.fall_time = 0
-        self.fall_speed = 500
+        self.fall_speed = 500 # ms per drop
         self.move_cooldown = 0
 
     def _generate_piece(self):
@@ -60,7 +60,7 @@ class PlayerBoard:
         self.piece_y = 0
         
         if self.check_collision(0, 0, self.current_piece):
-            self.alive = False # Game Over dla tego gracza
+            self.alive = False # Game Over for this player
 
     def check_collision(self, dx, dy, shape):
         for y, row in enumerate(shape):
@@ -102,7 +102,7 @@ class PlayerBoard:
             new_board.insert(0, [0 for _ in range(GRID_W)])
         self.board = new_board
         
-        # System punktacji
+        # Scoring System
         if lines_cleared == 1: self.score += 100
         elif lines_cleared == 2: self.score += 300
         elif lines_cleared == 3: self.score += 500
@@ -111,6 +111,7 @@ class PlayerBoard:
     def update(self, dt):
         if not self.alive: return
 
+        # Gravity
         self.fall_time += dt
         if self.fall_time >= self.fall_speed:
             self.fall_time = 0
@@ -119,44 +120,37 @@ class PlayerBoard:
             else:
                 self.lock_piece()
 
+        # Handle Continuous Analog Axis Inputs (D-Pad mapped to ABS_X / ABS_Y)
         self.move_cooldown -= dt
         if self.move_cooldown <= 0:
-            dx, dy = 0, 0
-            # Sprawdzenie D-Pada (jako Hat lub Axis - dla bezpieczeństwa obu)
-            if self.joystick.get_numhats() > 0:
-                dx, dy = self.joystick.get_hat(0)
-            else:
-                axis_x = self.joystick.get_axis(0)
-                axis_y = self.joystick.get_axis(1)
-                if axis_x < -0.5: dx = -1
-                elif axis_x > 0.5: dx = 1
-                if axis_y > 0.5: dy = -1 # w dół to często ujemne na d-padach uinput, zależy od kalibracji
-                elif axis_y < -0.5: dy = 1
-
-            if dx == -1 and not self.check_collision(-1, 0, self.current_piece):
+            axis_x = self.joystick.get_axis(0) # Linux ABS_X
+            axis_y = self.joystick.get_axis(1) # Linux ABS_Y
+            
+            # Pygame normalizes 0-255 to -1.0 to 1.0. 
+            # Evdev < 64 becomes Pygame < -0.5. Evdev > 192 becomes Pygame > 0.5.
+            
+            # X-Axis: 0 is Left, 255 is Right
+            if axis_x < -0.5 and not self.check_collision(-1, 0, self.current_piece):
                 self.piece_x -= 1
-                self.move_cooldown = 120
-            elif dx == 1 and not self.check_collision(1, 0, self.current_piece):
+                self.move_cooldown = 120 # 120ms delay before next movement tick
+            elif axis_x > 0.5 and not self.check_collision(1, 0, self.current_piece):
                 self.piece_x += 1
                 self.move_cooldown = 120
                 
-            if dy == -1 and not self.check_collision(0, 1, self.current_piece): # w dół (w zależności od mapowania evdev, dy może być 1 lub -1)
+            # Y-Axis: 0 is Up, 255 is Down (We only care about Down for soft drop)
+            if axis_y > 0.5 and not self.check_collision(0, 1, self.current_piece): 
                 self.piece_y += 1
-                self.move_cooldown = 60
-                
-            if dy == 1 and not self.check_collision(0, 1, self.current_piece):
-                self.piece_y += 1
-                self.move_cooldown = 60
+                self.move_cooldown = 60 # Faster tick rate for downward dropping
 
     def draw(self, surface, x_offset, y_offset, cell_size, block_textures, font, small_font):
-        # Rysowanie tła planszy
+        # Draw Board Background
         board_rect = pygame.Rect(x_offset, y_offset, GRID_W * cell_size, GRID_H * cell_size)
         pygame.draw.rect(surface, (20, 20, 20), board_rect)
         
-        # Osobista kolorowa otoczka gracza (Border)
+        # Player Border
         pygame.draw.rect(surface, self.color, board_rect, 4) 
 
-        # Zablokowane klocki
+        # Draw Locked Blocks
         for y in range(GRID_H):
             for x in range(GRID_W):
                 c_idx = self.board[y][x]
@@ -164,7 +158,7 @@ class PlayerBoard:
                     tex = pygame.transform.scale(block_textures[c_idx-1], (cell_size, cell_size))
                     surface.blit(tex, (x_offset + x * cell_size, y_offset + y * cell_size))
 
-        # Aktualny klocek
+        # Draw Current Piece
         if self.alive and self.current_piece:
             for y, row in enumerate(self.current_piece):
                 for x, cell in enumerate(row):
@@ -172,13 +166,13 @@ class PlayerBoard:
                         tex = pygame.transform.scale(block_textures[self.color_index-1], (cell_size, cell_size))
                         surface.blit(tex, (x_offset + (self.piece_x + x) * cell_size, y_offset + (self.piece_y + y) * cell_size))
 
-        # Nazwa i Punkty
+        # Names and Scores
         name_text = font.render(self.nickname, True, self.color)
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
-        # Kolejka 3 następnych klocków (Next)
+        # Next 3 Pieces Queue
         next_x = x_offset + (GRID_W * cell_size) + 10
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -189,6 +183,7 @@ class PlayerBoard:
                         surface.blit(tex, (next_x + x*(cell_size//2), next_y + y*(cell_size//2)))
             next_y += 4 * (cell_size // 2)
 
+        # Game Over Overlay
         if not self.alive:
             s = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
             s.fill((0, 0, 0, 180))
@@ -220,14 +215,14 @@ class Game:
         self.playlist = []
         if not os.path.exists('music'):
             os.makedirs('music')
-            print("Utworzono folder 'music'. Wrzuć tam pliki MP3/OGG!")
+            print("Folder 'music' created. Drop MP3/OGG files there!")
         else:
             for file in os.listdir('music'):
                 if file.endswith(('.mp3', '.ogg', '.wav')):
                     self.playlist.append(os.path.join('music', file))
         
         if self.playlist:
-            pygame.mixer.music.load(self.playlist[0]) # Ładuje pierwszy utwór, później można dodać shuffle
+            pygame.mixer.music.load(self.playlist[0])
 
     def load_blocks(self, filename):
         try:
@@ -252,7 +247,7 @@ class Game:
                 self.players[jid] = PlayerBoard(nick, joy, self.player_counter)
                 self.player_counter += 1
 
-        # Usuwanie odłączonych graczy
+        # Remove disconnected players
         connected_ids = [pygame.joystick.Joystick(i).get_instance_id() for i in range(count)]
         disconnected = [jid for jid in self.players if jid not in connected_ids]
         for jid in disconnected:
@@ -262,7 +257,7 @@ class Game:
         for p in self.players.values():
             p.reset()
         if self.playlist:
-            pygame.mixer.music.play(-1) # -1 oznacza zapętlenie
+            pygame.mixer.music.play(-1) # Loop music
         self.state = "PLAYING"
 
     def run(self):
@@ -277,25 +272,22 @@ class Game:
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
                 
+                # Handle Discrete Button Presses
                 elif event.type == pygame.JOYBUTTONDOWN:
                     player = self.players.get(event.instance_id)
                     if player:
-                        # Mapowanie przycisków: 
-                        # 0: A (Insta drop), 1: B (Obrót), 7: Start (Gotowość/Start)
-                        # UWAGA: Numery przycisków mogą się różnić zależnie od mapowania evdev na twoim serwerze.
-                        
                         if self.state == "MENU":
-                            if event.button == 7: # Przycisk START
+                            if event.button == 7: # BTN_START (Ready Toggle)
                                 player.ready = not player.ready
                         
                         elif self.state == "PLAYING" and player.alive:
-                            if event.button == 0: # Przycisk A -> Insta Drop
+                            if event.button == 0: # BTN_SOUTH (A Button)
                                 player.hard_drop()
-                            elif event.button == 1: # Przycisk B -> Rotate
+                            elif event.button == 1: # BTN_EAST (B Button)
                                 player.rotate_piece()
                                 
                         elif self.state == "LEADERBOARD":
-                            if event.button == 7: # START żeby wrócić do menu
+                            if event.button == 7: # BTN_START (Return to Menu)
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
@@ -303,13 +295,11 @@ class Game:
 
             if self.state == "MENU":
                 self.draw_menu()
-                # Start gry, gdy przynajmniej 1 gracz jest gotowy i wszyscy podłączeni są gotowi
                 if len(self.players) > 0 and all(p.ready for p in self.players.values()):
                     self.start_game()
                     
             elif self.state == "PLAYING":
                 self.update_and_draw_playing(dt)
-                # Sprawdzenie końca gry
                 if len(self.players) > 0 and all(not p.alive for p in self.players.values()):
                     pygame.mixer.music.stop()
                     self.state = "LEADERBOARD"
@@ -326,12 +316,12 @@ class Game:
         title = self.title_font.render("TETRIS LOBBY", True, (255, 255, 255))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
         
-        info = self.font.render("Wciśnij START (na padzie), aby zgłosić gotowość", True, (150, 150, 150))
+        info = self.font.render("Press START to ready up!", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
 
         y = 300
         for p in self.players.values():
-            status = "GOTOWY" if p.ready else "OCZEKUJE..."
+            status = "READY" if p.ready else "WAITING..."
             color = (50, 255, 50) if p.ready else (255, 50, 50)
             text = self.font.render(f"{p.nickname} - {status}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
@@ -345,7 +335,6 @@ class Game:
         sw, sh = self.screen.get_size()
         cell_w, cell_h = sw // cols, sh // rows
         
-        # Marginesy dla Next Piece i etykiet
         max_block_w = (cell_w - 100) // GRID_W 
         max_block_h = (cell_h - 60) // GRID_H
         block_size = min(max_block_w, max_block_h)
@@ -357,26 +346,24 @@ class Game:
             board_w = GRID_W * block_size
             board_h = GRID_H * block_size
             
-            # Wyrównanie planszy do lewej w jej slocie, by zrobić miejsce po prawej na "Next pieces"
             x_offset = (grid_x * cell_w) + (cell_w - board_w - 60) // 2 
             y_offset = (grid_y * cell_h) + (cell_h - board_h) // 2 + 20
             
             player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font)
 
     def draw_leaderboard(self):
-        title = self.title_font.render("TABELA WYNIKÓW", True, (255, 215, 0))
+        title = self.title_font.render("LEADERBOARD", True, (255, 215, 0))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
         
-        info = self.font.render("Wciśnij START, aby wrócić do menu", True, (150, 150, 150))
+        info = self.font.render("Press START to return to Lobby", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
 
-        # Sortowanie graczy po wyniku
         sorted_players = sorted(self.players.values(), key=lambda p: p.score, reverse=True)
         
         y = 300
         for idx, p in enumerate(sorted_players):
-            color = (255, 215, 0) if idx == 0 else (200, 200, 200) # Złoty dla wygranego
-            text = self.font.render(f"{idx + 1}. {p.nickname} - Pkt: {p.score}", True, color)
+            color = (255, 215, 0) if idx == 0 else (200, 200, 200)
+            text = self.font.render(f"{idx + 1}. {p.nickname} - Score: {p.score}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
             y += 50
 
