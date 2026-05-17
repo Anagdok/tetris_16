@@ -10,7 +10,7 @@ BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
 # Change this to any system font you prefer (e.g. "Verdana", "Comic Sans MS", "Courier New")
-FONT_NAME = "Arial"
+FONT_NAME = "Comic Sans MS"
 
 # Internal padding used for layout and rendering – smaller = larger boards
 UI_WIDTH_PADDING = 80   # originally 120
@@ -456,9 +456,9 @@ class Game:
         self.screen.blit(v_text, (BASE_WIDTH//2 - v_text.get_width()//2, y_center + 50))
 
     def draw_menu(self):
-        title = self.title_font.render("TETRIS LOBBY", True, (255, 255, 255))
+        title = self.title_font.render("TETRIS", True, (255, 255, 255))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        info = self.font.render("START: Gotowość | SELECT: Głosuj za wyjściem do systemu Linux", True, (150, 150, 150))
+        info = self.font.render("START: Gotowość | SELECT: Głosuj za zakończeniem gry", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
         
         y = 300
