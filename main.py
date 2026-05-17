@@ -9,11 +9,9 @@ FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# --- FONT CONFIGURATION (KONFIGURACJA CZCIONKI) ---
-# Jeśli masz własną czcionkę, wrzuć plik .ttf do folderu z grą i wpisz jego nazwę tutaj.
-# Przykład: CUSTOM_FONT_PATH = "mojaczcionka.ttf"
-# Zostaw None, jeśli chcesz używać domyślnej czcionki systemowej.
-CUSTOM_FONT_PATH = None 
+# --- KONFIGURACJA CZCIONKI ---
+# Wpisz nazwę czcionki systemowej, którą chcesz użyć (np. "arial", "courier", "impact", "consolas")
+SYSTEM_FONT_NAME = "courier" 
 FONT_SIZE_MAIN = 24
 FONT_SIZE_SMALL = 16
 FONT_SIZE_TITLE = 64
@@ -149,9 +147,9 @@ class PlayerBoard:
                 self.piece_y += 1
                 self.move_cooldown = 60
 
-    def draw(self, surface, cell_x, cell_y, cell_w, cell_h, x_offset, y_offset, cell_size, block_textures, font, small_font, players_dict):
-        # --- ZEWNĘTRZNA RAMKA GRACZA (OUTLINE) ---
-        # Rysuje ramkę na krawędziach komórki (Split-screen)
+    def draw(self, surface, cell_x, cell_y, cell_w, cell_h, x_offset, y_offset, cell_size, block_textures, font, small_font, players_dict, is_menu=False):
+        # --- ZEWNĘTRZNA RAMKA GRACZA W JEGO KOLORZE ---
+        # To rysuje kwadrat dookoła całego przydzielonego mu miejsca w siatce
         pygame.draw.rect(surface, self.color, (cell_x + 4, cell_y + 4, cell_w - 8, cell_h - 8), 4, border_radius=8)
 
         # Rysowanie tła planszy
@@ -175,13 +173,17 @@ class PlayerBoard:
                         tex = pygame.transform.scale(block_textures[self.color_index-1], (cell_size, cell_size))
                         surface.blit(tex, (x_offset + (self.piece_x + x) * cell_size, y_offset + (self.piece_y + y) * cell_size))
 
-        # Interfejs tekstu
+        # Interfejs tekstu (Wyśrodkowany nad planszą, ale z uwzględnieniem obrysu)
         name_text = font.render(self.nickname, True, self.color)
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
-        # Kolejne klocki
+        if is_menu and self.voted_quit:
+            vote_text = small_font.render("CHCE WYJŚĆ", True, (255, 50, 50))
+            surface.blit(vote_text, (x_offset + board_rect.width - vote_text.get_width(), y_offset - 40))
+
+        # Prawy panel: Kolejne klocki
         next_x = x_offset + (GRID_W * cell_size) + 15
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -192,8 +194,8 @@ class PlayerBoard:
                         surface.blit(tex, (next_x + x*(cell_size//2), next_y + y*(cell_size//2)))
             next_y += 4 * (cell_size // 2)
 
-        # Celownik
-        if self.alive:
+        # Prawy panel: Celownik
+        if self.alive and not is_menu:
             if self.target_jid and self.target_jid in players_dict:
                 target = players_dict[self.target_jid]
                 if target.alive:
@@ -207,7 +209,7 @@ class PlayerBoard:
                 warn_text = font.render(f"! ŚMIECI: {self.incoming_garbage} !", True, (255, 50, 50))
                 surface.blit(warn_text, (x_offset, y_offset + (GRID_H * cell_size) + 5))
 
-        # Ekran przegranej (ograniczony tylko do planszy)
+        # Ekran przegranej (Obejmuje tylko środek planszy)
         if not self.alive:
             s = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
             s.fill((0, 0, 0, 180))
@@ -225,15 +227,10 @@ class Game:
         pygame.display.set_caption("Tetris 16-Player Battle")
         self.clock = pygame.time.Clock()
         
-        # --- LADOWANIE CZCIONKI ---
-        if CUSTOM_FONT_PATH and os.path.exists(CUSTOM_FONT_PATH):
-            self.font = pygame.font.Font(CUSTOM_FONT_PATH, FONT_SIZE_MAIN)
-            self.small_font = pygame.font.Font(CUSTOM_FONT_PATH, FONT_SIZE_SMALL)
-            self.title_font = pygame.font.Font(CUSTOM_FONT_PATH, FONT_SIZE_TITLE)
-        else:
-            self.font = pygame.font.SysFont("Arial", FONT_SIZE_MAIN, bold=True)
-            self.small_font = pygame.font.SysFont("Arial", FONT_SIZE_SMALL)
-            self.title_font = pygame.font.SysFont("Arial", FONT_SIZE_TITLE, bold=True)
+        # --- ZMIENIONY SYSTEM CZCIONEK SYSTEMOWYCH ---
+        self.font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_MAIN, bold=True)
+        self.small_font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_SMALL)
+        self.title_font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_TITLE, bold=True)
         
         self.players = {}
         self.block_textures = self.load_blocks("blocks.png")
@@ -345,7 +342,7 @@ class Game:
                             
                     else:
                         if self.state == "MENU":
-                            if event.button == 2: # SELECT
+                            if event.button == 2: # SELECT (Głosowanie działa tylko w Menu)
                                 player.voted_quit = not player.voted_quit
                                 majority = (len(self.players) // 2) + 1
                                 if sum(1 for p in self.players.values() if p.voted_quit) >= majority:
@@ -441,9 +438,7 @@ class Game:
             status_text = "GOTOWY" if p.ready else "OCZEKUJE..."
             status_color = (50, 255, 50) if p.ready else (255, 50, 50)
             
-            # Nick renderowany w kolorze gracza
             name_surf = self.font.render(f"{p.nickname} - ", True, p.color)
-            # Status renderowany na zielono/czerwono
             status_surf = self.font.render(status_text, True, status_color)
             
             total_w = name_surf.get_width() + status_surf.get_width()
@@ -456,7 +451,8 @@ class Game:
     def update_and_draw_playing(self, dt):
         num_players = max(1, len(self.players))
         
-        # --- KLASYCZNY ALGORYTM SIATKI (STARY SPOSÓB) ---
+        # --- STARY, KLASYCZNY ALGORYTM SIATKI ---
+        # Tworzy idealne kolumny/rzędy i zostawia pustą lukę na dole w prawo, jeśli potrzeba
         cols = math.ceil(math.sqrt(num_players))
         rows = math.ceil(num_players / cols)
         sw, sh = self.screen.get_size()
@@ -464,9 +460,9 @@ class Game:
         cell_w = sw // cols
         cell_h = sh // rows
         
-        # 100px miejsca po bokach w komórce na dodatkowe teksty i next pieces
+        # 100px padding, żeby plansza nie uderzała w ramkę
         block_size = min((cell_w - 100) // GRID_W, (cell_h - 100) // GRID_H)
-        block_size = max(1, block_size) # Zapobiega crashem jeśli okno jest malutkie
+        block_size = max(1, block_size) 
         
         for idx, player in enumerate(self.players.values()):
             player.update(dt)
@@ -477,15 +473,14 @@ class Game:
             cell_x = grid_x * cell_w
             cell_y = grid_y * cell_h
             
-            # Wymiary samej fizycznej planszy
             board_w = GRID_W * block_size
             board_h = GRID_H * block_size
             
-            # Centrowanie planszy dokładnie w środku swojej "komórki"
+            # Wyrównanie planszy z lekszym przesunięciem na lewo, by zrobić miejsce dla Next Queue
             x_offset = cell_x + (cell_w - board_w - 80) // 2 
             y_offset = cell_y + (cell_h - board_h) // 2 + 20
             
-            player.draw(self.screen, cell_x, cell_y, cell_w, cell_h, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font, self.players)
+            player.draw(self.screen, cell_x, cell_y, cell_w, cell_h, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font, self.players, is_menu=False)
 
     def draw_leaderboard(self):
         title = self.title_font.render("TABELA WYNIKÓW", True, (255, 215, 0))
