@@ -28,7 +28,7 @@ class PlayerBoard:
         self.color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
         self.ready = False
         
-        # Voting Flags
+        # Flagi głosowania
         self.voted_quit = False
         self.voted_yes = False
         self.voted_no = False
@@ -146,9 +146,8 @@ class PlayerBoard:
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
-        # Show if player voted to quit (only in normal states)
         if self.voted_quit:
-            vote_text = small_font.render("VOTED QUIT", True, (255, 50, 50))
+            vote_text = small_font.render("CHCE WYJŚĆ", True, (255, 50, 50))
             surface.blit(vote_text, (x_offset, y_offset - 60))
 
         next_x = x_offset + (GRID_W * cell_size) + 10
@@ -185,7 +184,7 @@ class Game:
         self.block_textures = self.load_blocks("blocks.png")
         
         self.state = "MENU"
-        self.previous_state = "MENU" # To remember where to return after a prompt
+        self.previous_state = "MENU"
         self.player_counter = 0
         
         self.load_music()
@@ -235,7 +234,6 @@ class Game:
                     joy = pygame.joystick.Joystick(event.device_index)
                     name = joy.get_name()
                     jid = joy.get_instance_id()
-                    
                     if name.startswith("Gamepad_") and jid not in self.players:
                         nick = name.replace("Gamepad_", "")
                         self.players[jid] = PlayerBoard(nick, joy, self.player_counter)
@@ -250,37 +248,34 @@ class Game:
                     if not player: continue
                     
                     # 0: A, 1: B, 2: SELECT, 3: START
-                    
-                    # --- GLOBAL VOTE SYSTEM (ACTIVE IN PROMPT) ---
                     if self.state == "QUIT_PROMPT":
-                        if event.button == 2: # SELECT -> Vote Yes to Exit
+                        if event.button == 2: # SELECT -> Potwierdź wyjście
                             player.voted_yes = True
                             player.voted_no = False
-                        elif event.button == 3: # START -> Vote No to Exit
+                        elif event.button == 3: # START -> Anuluj
                             player.voted_no = True
                             player.voted_yes = False
                             
-                        # Check Confirm Results
                         yes_votes = sum(1 for p in self.players.values() if p.voted_yes)
                         no_votes = sum(1 for p in self.players.values() if p.voted_no)
-                        majority = len(self.players) // 2
+                        majority = (len(self.players) // 2) + 1 # Zawsze więcej niż połowa (np. 1 z 1, 2 z 2, 2 z 3)
                         
-                        if yes_votes > majority:
-                            running = False # MAJORITY CONFIRMED EXIT
+                        if yes_votes >= majority:
+                            running = False # WYJŚCIE DO SYSTEMU
                         elif no_votes >= majority: 
-                            self.state = self.previous_state # Cancel, resume game
+                            self.state = self.previous_state # Powrót do gry
                             self.reset_all_votes()
                             
-                    # --- NORMAL GAMEPLAY / MENU INPUTS ---
                     else:
-                        if event.button == 2: # SELECT -> Initiate Quit Vote
+                        if event.button == 2: # SELECT -> Inicjacja głosowania za wyjściem (w Menu i w Grze)
                             player.voted_quit = not player.voted_quit
                             total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
+                            majority = (len(self.players) // 2) + 1
                             
-                            if total_quit_votes > len(self.players) // 2:
+                            if total_quit_votes >= majority:
                                 self.previous_state = self.state
                                 self.state = "QUIT_PROMPT"
-                                self.reset_all_votes() # Clear initial votes for the confirmation screen
+                                self.reset_all_votes()
                                 
                         elif self.state == "MENU":
                             if event.button == 3: # START
@@ -295,21 +290,33 @@ class Game:
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
-            # --- RENDER LOGIC ---
+            # --- POPRAWIONA LOGIKA RYSOWANIA (BLANK SCREEN FIX) ---
             self.screen.fill((10, 10, 15))
 
-            # Always draw the background state
-            if self.state in ["MENU", "QUIT_PROMPT"] and self.previous_state == "MENU":
+            # Ustalamy, jaki stan jest w tle (jeśli jest Prompt, rysujemy to co było przed nim)
+            bg_state = self.previous_state if self.state == "QUIT_PROMPT" else self.state
+
+            if bg_state == "MENU":
                 self.draw_menu()
-            elif self.state in ["PLAYING", "QUIT_PROMPT"] and self.previous_state == "PLAYING":
-                if self.state != "QUIT_PROMPT": # Freeze logic if paused
-                    self.update_and_draw_playing(dt) 
-                else:
-                    self.update_and_draw_playing(0) # Pass 0 dt so pieces stop falling
-            elif self.state in ["LEADERBOARD", "QUIT_PROMPT"] and self.previous_state == "LEADERBOARD":
+            elif bg_state == "PLAYING":
+                # Zatrzymujemy czas (dt=0), jeśli pauza/prompt jest aktywny
+                self.update_and_draw_playing(dt if self.state != "QUIT_PROMPT" else 0)
+            elif bg_state == "LEADERBOARD":
                 self.draw_leaderboard()
 
-            # State Logic Triggers
+            # Globalny UI o stanie głosowania podczas gry (żeby gracze wiedzieli, że ktoś wcisnął Select)
+            if self.state != "QUIT_PROMPT":
+                total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
+                if total_quit_votes > 0:
+                    majority = (len(self.players) // 2) + 1
+                    vote_info = self.font.render(f"UWAGA! Głosy za przerwaniem gry: {total_quit_votes} / {majority} (Wciśnij SELECT aby dołączyć)", True, (255, 100, 100))
+                    self.screen.blit(vote_info, (BASE_WIDTH//2 - vote_info.get_width()//2, 20))
+
+            # Rysowanie Overlay'u Prompt
+            if self.state == "QUIT_PROMPT":
+                self.draw_quit_prompt()
+
+            # Sprawdzenie warunków przejścia (tylko gdy nie ma pauzy)
             if self.state == "MENU":
                 if len(self.players) > 0 and all(p.ready for p in self.players.values()):
                     self.start_game()
@@ -318,10 +325,6 @@ class Game:
                     pygame.mixer.music.stop()
                     self.state = "LEADERBOARD"
 
-            # Draw Overlay if Prompted
-            if self.state == "QUIT_PROMPT":
-                self.draw_quit_prompt()
-
             pygame.display.flip()
             
         pygame.quit()
@@ -329,31 +332,31 @@ class Game:
 
     def draw_quit_prompt(self):
         s = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
-        s.fill((0, 0, 0, 200)) # Dark transparent overlay
+        s.fill((0, 0, 0, 220)) # Przyciemnienie tła
         self.screen.blit(s, (0, 0))
         
         y_center = BASE_HEIGHT // 2
-        
-        t1 = self.title_font.render("MAJORITY VOTED TO QUIT", True, (255, 50, 50))
-        t2 = self.font.render("Press SELECT to Confirm Exit. Press START to Cancel.", True, (255, 255, 255))
+        t1 = self.title_font.render("CZY NA PEWNO CHCESZ ZAMKNĄĆ GRĘ?", True, (255, 50, 50))
+        t2 = self.font.render("Wciśnij SELECT by potwierdzić. Wciśnij START by anulować.", True, (255, 255, 255))
         
         self.screen.blit(t1, (BASE_WIDTH//2 - t1.get_width()//2, y_center - 100))
         self.screen.blit(t2, (BASE_WIDTH//2 - t2.get_width()//2, y_center - 20))
         
         yes_votes = sum(1 for p in self.players.values() if p.voted_yes)
         no_votes = sum(1 for p in self.players.values() if p.voted_no)
+        majority = (len(self.players) // 2) + 1
         
-        v_text = self.font.render(f"CONFIRM EXIT: {yes_votes}   |   CANCEL: {no_votes}", True, (255, 215, 0))
+        v_text = self.font.render(f"WYJŚCIE: {yes_votes}/{majority} głosów   |   ANULOWANIE: {no_votes}/{majority} głosów", True, (255, 215, 0))
         self.screen.blit(v_text, (BASE_WIDTH//2 - v_text.get_width()//2, y_center + 50))
 
     def draw_menu(self):
         title = self.title_font.render("TETRIS LOBBY", True, (255, 255, 255))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        info = self.font.render("Press START to ready up! Press SELECT to vote quit.", True, (150, 150, 150))
+        info = self.font.render("Wciśnij START aby potwierdzić gotowość!", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
         y = 300
         for p in self.players.values():
-            status = "READY" if p.ready else "WAITING..."
+            status = "GOTOWY" if p.ready else "OCZEKUJE..."
             color = (50, 255, 50) if p.ready else (255, 50, 50)
             text = self.font.render(f"{p.nickname} - {status}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
@@ -375,14 +378,14 @@ class Game:
             player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font)
 
     def draw_leaderboard(self):
-        title = self.title_font.render("LEADERBOARD", True, (255, 215, 0))
+        title = self.title_font.render("TABELA WYNIKÓW", True, (255, 215, 0))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        info = self.font.render("Press START to return to Lobby", True, (150, 150, 150))
+        info = self.font.render("Wciśnij START aby wrócić do Lobby", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
         y = 300
         for idx, p in enumerate(sorted(self.players.values(), key=lambda p: p.score, reverse=True)):
             color = (255, 215, 0) if idx == 0 else (200, 200, 200)
-            text = self.font.render(f"{idx + 1}. {p.nickname} - Score: {p.score}", True, color)
+            text = self.font.render(f"{idx + 1}. {p.nickname} - Pkt: {p.score}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
             y += 50
 
