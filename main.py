@@ -46,6 +46,11 @@ class PlayerBoard:
         self.fall_time = 0
         self.fall_speed = 500
         self.move_cooldown = 0
+        
+        # System Ataku i Śmieci
+        self.target_jid = None 
+        self.incoming_garbage = 0
+        self.outbound_garbage = 0
 
     def _generate_piece(self):
         shape_idx = random.randint(0, len(SHAPES) - 1)
@@ -82,10 +87,18 @@ class PlayerBoard:
         self.fall_time = 0
 
     def lock_piece(self):
+        # 1. Zablokuj klocki na planszy
         for y, row in enumerate(self.current_piece):
             for x, cell in enumerate(row):
                 if cell: self.board[self.piece_y + y][self.piece_x + x] = self.color_index
+        
+        # 2. Wyczyść linie i wygeneruj ataki
         self.clear_lines()
+        
+        # 3. Dodaj śmieci, którymi zostałeś zaatakowany, z dołu planszy
+        self.apply_garbage()
+        
+        # 4. Spawnuje następny klocek
         self.spawn_piece()
 
     def clear_lines(self):
@@ -94,10 +107,28 @@ class PlayerBoard:
         for _ in range(lines_cleared): new_board.insert(0, [0 for _ in range(GRID_W)])
         self.board = new_board
         
+        # System Ataku (Wyślij śmieci innym)
+        if lines_cleared == 2: self.outbound_garbage += 1
+        elif lines_cleared == 3: self.outbound_garbage += 2
+        elif lines_cleared == 4: self.outbound_garbage += 4
+        
+        # System Wyniku
         if lines_cleared == 1: self.score += 100
         elif lines_cleared == 2: self.score += 300
         elif lines_cleared == 3: self.score += 500
         elif lines_cleared == 4: self.score += 800
+
+    def apply_garbage(self):
+        if self.incoming_garbage > 0:
+            for _ in range(self.incoming_garbage):
+                hole = random.randint(0, GRID_W - 1)
+                # Indeks 8 to "szary" klocek w pliku blocks.png
+                garbage_row = [8 if i != hole else 0 for i in range(GRID_W)] 
+                
+                self.board.pop(0) # Usuń najwyższą linię
+                self.board.append(garbage_row) # Wstaw śmieci na sam dół
+                
+            self.incoming_garbage = 0
 
     def update(self, dt):
         if not self.alive: return
@@ -122,7 +153,7 @@ class PlayerBoard:
                 self.piece_y += 1
                 self.move_cooldown = 60
 
-    def draw(self, surface, x_offset, y_offset, cell_size, block_textures, font, small_font):
+    def draw(self, surface, x_offset, y_offset, cell_size, block_textures, font, small_font, players_dict):
         board_rect = pygame.Rect(x_offset, y_offset, GRID_W * cell_size, GRID_H * cell_size)
         pygame.draw.rect(surface, (20, 20, 20), board_rect)
         pygame.draw.rect(surface, self.color, board_rect, 4) 
@@ -146,10 +177,24 @@ class PlayerBoard:
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
+        # --- Interfejs Ataku (Celownik i ostrzeżenia) ---
+        if self.alive:
+            if self.target_jid and self.target_jid in players_dict:
+                target = players_dict[self.target_jid]
+                if target.alive:
+                    target_text = small_font.render(f"CEL: {target.nickname}", True, target.color)
+                    surface.blit(target_text, (x_offset + (GRID_W * cell_size) + 10, y_offset - 20))
+            
+            if self.incoming_garbage > 0:
+                warn_text = font.render(f"! OTRZYMUJESZ ŚMIECI: {self.incoming_garbage} !", True, (255, 50, 50))
+                surface.blit(warn_text, (x_offset, y_offset + (GRID_H * cell_size) + 5))
+
+        # Status ucieczki
         if self.voted_quit:
             vote_text = small_font.render("CHCE WYJŚĆ", True, (255, 50, 50))
             surface.blit(vote_text, (x_offset, y_offset - 60))
 
+        # Kolejka klocków
         next_x = x_offset + (GRID_W * cell_size) + 10
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -215,9 +260,31 @@ class Game:
             p.voted_no = False
 
     def start_game(self):
-        for p in self.players.values(): p.reset()
+        for p in self.players.values(): 
+            p.reset()
+            self._assign_random_target(p) # Każdy dostaje początkowy cel
         if self.playlist: pygame.mixer.music.play(-1)
         self.state = "PLAYING"
+
+    def _assign_random_target(self, player):
+        alive_jids = [jid for jid, p in self.players.items() if p.alive and p != player]
+        player.target_jid = random.choice(alive_jids) if alive_jids else None
+
+    def cycle_target(self, player_jid):
+        player = self.players.get(player_jid)
+        if not player or not player.alive: return
+        
+        alive_jids = [jid for jid, p in self.players.items() if p.alive and jid != player_jid]
+        if not alive_jids:
+            player.target_jid = None
+            return
+            
+        if player.target_jid not in alive_jids:
+            player.target_jid = alive_jids[0]
+        else:
+            current_idx = alive_jids.index(player.target_jid)
+            next_idx = (current_idx + 1) % len(alive_jids)
+            player.target_jid = alive_jids[next_idx]
 
     def run(self):
         running = True
@@ -249,7 +316,7 @@ class Game:
                     
                     # 0: A, 1: B, 2: SELECT, 3: START
                     if self.state == "QUIT_PROMPT":
-                        if event.button == 2: # SELECT -> Potwierdź wyjście
+                        if event.button == 2: # SELECT -> Potwierdź
                             player.voted_yes = True
                             player.voted_no = False
                         elif event.button == 3: # START -> Anuluj
@@ -258,65 +325,84 @@ class Game:
                             
                         yes_votes = sum(1 for p in self.players.values() if p.voted_yes)
                         no_votes = sum(1 for p in self.players.values() if p.voted_no)
-                        majority = (len(self.players) // 2) + 1 # Zawsze więcej niż połowa (np. 1 z 1, 2 z 2, 2 z 3)
+                        majority = (len(self.players) // 2) + 1 
                         
                         if yes_votes >= majority:
-                            running = False # WYJŚCIE DO SYSTEMU
+                            running = False 
                         elif no_votes >= majority: 
-                            self.state = self.previous_state # Powrót do gry
+                            self.state = self.previous_state 
                             self.reset_all_votes()
                             
                     else:
-                        if event.button == 2: # SELECT -> Inicjacja głosowania za wyjściem (w Menu i w Grze)
-                            player.voted_quit = not player.voted_quit
-                            total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
-                            majority = (len(self.players) // 2) + 1
-                            
-                            if total_quit_votes >= majority:
-                                self.previous_state = self.state
-                                self.state = "QUIT_PROMPT"
-                                self.reset_all_votes()
-                                
-                        elif self.state == "MENU":
-                            if event.button == 3: # START
+                        if self.state == "MENU":
+                            if event.button == 2: # SELECT -> Głosuj wyjście z Menu
+                                player.voted_quit = not player.voted_quit
+                                majority = (len(self.players) // 2) + 1
+                                if sum(1 for p in self.players.values() if p.voted_quit) >= majority:
+                                    self.previous_state = self.state
+                                    self.state = "QUIT_PROMPT"
+                                    self.reset_all_votes()
+                            elif event.button == 3: # START -> Gotowość
                                 player.ready = not player.ready
                         
                         elif self.state == "PLAYING" and player.alive:
-                            if event.button == 0: player.hard_drop()
-                            elif event.button == 1: player.rotate_piece()
+                            if event.button == 0: player.hard_drop() # A
+                            elif event.button == 1: player.rotate_piece() # B
+                            elif event.button == 2: # SELECT -> Zmiana Celu
+                                self.cycle_target(event.instance_id)
+                            elif event.button == 3: # START -> Głosuj wyjście podczas Gry
+                                player.voted_quit = not player.voted_quit
+                                majority = (len(self.players) // 2) + 1
+                                if sum(1 for p in self.players.values() if p.voted_quit) >= majority:
+                                    self.previous_state = self.state
+                                    self.state = "QUIT_PROMPT"
+                                    self.reset_all_votes()
                                 
                         elif self.state == "LEADERBOARD":
                             if event.button == 3: # START
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
-            # --- POPRAWIONA LOGIKA RYSOWANIA (BLANK SCREEN FIX) ---
-            self.screen.fill((10, 10, 15))
+            # --- LOGIKA ŚMIECI (ROZSYŁANIE) ---
+            if self.state == "PLAYING":
+                for jid, p in self.players.items():
+                    if p.outbound_garbage > 0:
+                        target = self.players.get(p.target_jid)
+                        
+                        # Jeśli cel zginął lub wyszedł, przypisz nowy losowy cel przed atakiem
+                        if not target or not target.alive:
+                            self._assign_random_target(p)
+                            target = self.players.get(p.target_jid)
+                            
+                        # Wyślij śmieci
+                        if target and target.alive:
+                            target.incoming_garbage += p.outbound_garbage
+                            
+                        p.outbound_garbage = 0
 
-            # Ustalamy, jaki stan jest w tle (jeśli jest Prompt, rysujemy to co było przed nim)
+            # --- LOGIKA RYSOWANIA ---
+            self.screen.fill((10, 10, 15))
             bg_state = self.previous_state if self.state == "QUIT_PROMPT" else self.state
 
             if bg_state == "MENU":
                 self.draw_menu()
             elif bg_state == "PLAYING":
-                # Zatrzymujemy czas (dt=0), jeśli pauza/prompt jest aktywny
                 self.update_and_draw_playing(dt if self.state != "QUIT_PROMPT" else 0)
             elif bg_state == "LEADERBOARD":
                 self.draw_leaderboard()
 
-            # Globalny UI o stanie głosowania podczas gry (żeby gracze wiedzieli, że ktoś wcisnął Select)
             if self.state != "QUIT_PROMPT":
                 total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
                 if total_quit_votes > 0:
                     majority = (len(self.players) // 2) + 1
-                    vote_info = self.font.render(f"UWAGA! Głosy za przerwaniem gry: {total_quit_votes} / {majority} (Wciśnij SELECT aby dołączyć)", True, (255, 100, 100))
+                    # Komunikat zaktualizowany o poprawny przycisk dla aktualnego stanu
+                    btn_str = "START" if self.state == "PLAYING" else "SELECT"
+                    vote_info = self.font.render(f"UWAGA! Głosy za przerwaniem gry: {total_quit_votes} / {majority} (Wciśnij {btn_str} aby dołączyć)", True, (255, 100, 100))
                     self.screen.blit(vote_info, (BASE_WIDTH//2 - vote_info.get_width()//2, 20))
 
-            # Rysowanie Overlay'u Prompt
             if self.state == "QUIT_PROMPT":
                 self.draw_quit_prompt()
 
-            # Sprawdzenie warunków przejścia (tylko gdy nie ma pauzy)
             if self.state == "MENU":
                 if len(self.players) > 0 and all(p.ready for p in self.players.values()):
                     self.start_game()
@@ -332,7 +418,7 @@ class Game:
 
     def draw_quit_prompt(self):
         s = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
-        s.fill((0, 0, 0, 220)) # Przyciemnienie tła
+        s.fill((0, 0, 0, 220)) 
         self.screen.blit(s, (0, 0))
         
         y_center = BASE_HEIGHT // 2
@@ -352,7 +438,7 @@ class Game:
     def draw_menu(self):
         title = self.title_font.render("TETRIS LOBBY", True, (255, 255, 255))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        info = self.font.render("Wciśnij START aby potwierdzić gotowość!", True, (150, 150, 150))
+        info = self.font.render("START: Gotowość | SELECT: Głosuj za wyjściem z serwera", True, (150, 150, 150))
         self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
         y = 300
         for p in self.players.values():
@@ -375,7 +461,8 @@ class Game:
             grid_x, grid_y = idx % cols, idx // cols
             x_offset = (grid_x * cell_w) + (cell_w - (GRID_W * block_size) - 60) // 2 
             y_offset = (grid_y * cell_h) + (cell_h - (GRID_H * block_size)) // 2 + 20
-            player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font)
+            # Przekazujemy self.players, by gracz mógł wylistować do kogo celuje
+            player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font, self.players)
 
     def draw_leaderboard(self):
         title = self.title_font.render("TABELA WYNIKÓW", True, (255, 215, 0))
