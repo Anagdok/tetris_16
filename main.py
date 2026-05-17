@@ -4,13 +4,13 @@ import math
 import sys
 import os
 
-# --- KONFIGURACJA ---
+# --- CONFIGURATION ---
 FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# --- KONFIGURACJA CZCIONKI ---
-# Wpisz nazwę czcionki systemowej, którą chcesz użyć (np. "arial", "courier", "impact", "consolas")
+# --- FONT CONFIGURATION ---
+# Type any standard font installed on your system (e.g., "arial", "courier", "impact", "consolas")
 SYSTEM_FONT_NAME = "courier" 
 FONT_SIZE_MAIN = 24
 FONT_SIZE_SMALL = 16
@@ -148,16 +148,15 @@ class PlayerBoard:
                 self.move_cooldown = 60
 
     def draw(self, surface, cell_x, cell_y, cell_w, cell_h, x_offset, y_offset, cell_size, block_textures, font, small_font, players_dict, is_menu=False):
-        # --- ZEWNĘTRZNA RAMKA GRACZA W JEGO KOLORZE ---
-        # To rysuje kwadrat dookoła całego przydzielonego mu miejsca w siatce
+        # --- PLAYER COLORED OUTLINE ---
         pygame.draw.rect(surface, self.color, (cell_x + 4, cell_y + 4, cell_w - 8, cell_h - 8), 4, border_radius=8)
 
-        # Rysowanie tła planszy
+        # Draw Board Background
         board_rect = pygame.Rect(x_offset, y_offset, GRID_W * cell_size, GRID_H * cell_size)
         pygame.draw.rect(surface, (20, 20, 20), board_rect)
-        pygame.draw.rect(surface, (80, 80, 80), board_rect, 2) # Szara ramka samej planszy
+        pygame.draw.rect(surface, (80, 80, 80), board_rect, 2) 
 
-        # Zablokowane klocki
+        # Draw Locked Blocks
         for y in range(GRID_H):
             for x in range(GRID_W):
                 c_idx = self.board[y][x]
@@ -165,7 +164,7 @@ class PlayerBoard:
                     tex = pygame.transform.scale(block_textures[c_idx-1], (cell_size, cell_size))
                     surface.blit(tex, (x_offset + x * cell_size, y_offset + y * cell_size))
 
-        # Aktualny klocek
+        # Draw Current Piece
         if self.alive and self.current_piece:
             for y, row in enumerate(self.current_piece):
                 for x, cell in enumerate(row):
@@ -173,7 +172,7 @@ class PlayerBoard:
                         tex = pygame.transform.scale(block_textures[self.color_index-1], (cell_size, cell_size))
                         surface.blit(tex, (x_offset + (self.piece_x + x) * cell_size, y_offset + (self.piece_y + y) * cell_size))
 
-        # Interfejs tekstu (Wyśrodkowany nad planszą, ale z uwzględnieniem obrysu)
+        # Draw Player Info
         name_text = font.render(self.nickname, True, self.color)
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
@@ -183,7 +182,7 @@ class PlayerBoard:
             vote_text = small_font.render("CHCE WYJŚĆ", True, (255, 50, 50))
             surface.blit(vote_text, (x_offset + board_rect.width - vote_text.get_width(), y_offset - 40))
 
-        # Prawy panel: Kolejne klocki
+        # Right Panel: Next Pieces
         next_x = x_offset + (GRID_W * cell_size) + 15
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -194,7 +193,7 @@ class PlayerBoard:
                         surface.blit(tex, (next_x + x*(cell_size//2), next_y + y*(cell_size//2)))
             next_y += 4 * (cell_size // 2)
 
-        # Prawy panel: Celownik
+        # Right Panel: Targeting Info
         if self.alive and not is_menu:
             if self.target_jid and self.target_jid in players_dict:
                 target = players_dict[self.target_jid]
@@ -209,13 +208,14 @@ class PlayerBoard:
                 warn_text = font.render(f"! ŚMIECI: {self.incoming_garbage} !", True, (255, 50, 50))
                 surface.blit(warn_text, (x_offset, y_offset + (GRID_H * cell_size) + 5))
 
-        # Ekran przegranej (Obejmuje tylko środek planszy)
+        # Game Over Screen Overlay
         if not self.alive:
             s = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
             s.fill((0, 0, 0, 180))
             surface.blit(s, (x_offset, y_offset))
             over_text = font.render("KO", True, (255, 50, 50))
             surface.blit(over_text, (x_offset + (GRID_W*cell_size)//2 - over_text.get_width()//2, y_offset + (GRID_H*cell_size)//2))
+
 
 class Game:
     def __init__(self):
@@ -227,7 +227,7 @@ class Game:
         pygame.display.set_caption("Tetris 16-Player Battle")
         self.clock = pygame.time.Clock()
         
-        # --- ZMIENIONY SYSTEM CZCIONEK SYSTEMOWYCH ---
+        # Load the selected System Font
         self.font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_MAIN, bold=True)
         self.small_font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_SMALL)
         self.title_font = pygame.font.SysFont(SYSTEM_FONT_NAME, FONT_SIZE_TITLE, bold=True)
@@ -294,6 +294,38 @@ class Game:
             next_idx = (current_idx + 1) % len(alive_jids)
             player.target_jid = alive_jids[next_idx]
 
+    def calculate_optimal_layout(self, num_players, sw, sh):
+        """
+        The mathematical optimizer: Iterates through columns to find the layout that produces 
+        the physically largest tetris blocks without squishing them.
+        """
+        best_score = -9999
+        best_cols, best_rows, best_block = 1, 1, 1
+        
+        for c in range(1, num_players + 1):
+            r = math.ceil(num_players / c)
+            cell_w = sw // c
+            cell_h = sh // r
+            
+            # Reserved space for UI inside the cell
+            max_b_w = (cell_w - 120) // GRID_W
+            max_b_h = (cell_h - 100) // GRID_H
+            block = max(1, min(max_b_w, max_b_h))
+            
+            empty_cells = (c * r) - num_players
+            
+            # Scoring: Highly prioritizes block size, but penalizes empty grids
+            score = (block * 1000) - empty_cells
+            
+            if score > best_score:
+                best_score = score
+                best_cols = c
+                best_rows = r
+                best_block = block
+                
+        best_block = min(best_block, 40)
+        return best_cols, best_rows, best_block
+
     def run(self):
         running = True
         while running:
@@ -342,7 +374,7 @@ class Game:
                             
                     else:
                         if self.state == "MENU":
-                            if event.button == 2: # SELECT (Głosowanie działa tylko w Menu)
+                            if event.button == 2: # SELECT (Vote works ONLY in MENU)
                                 player.voted_quit = not player.voted_quit
                                 majority = (len(self.players) // 2) + 1
                                 if sum(1 for p in self.players.values() if p.voted_quit) >= majority:
@@ -450,19 +482,15 @@ class Game:
 
     def update_and_draw_playing(self, dt):
         num_players = max(1, len(self.players))
-        
-        # --- STARY, KLASYCZNY ALGORYTM SIATKI ---
-        # Tworzy idealne kolumny/rzędy i zostawia pustą lukę na dole w prawo, jeśli potrzeba
-        cols = math.ceil(math.sqrt(num_players))
-        rows = math.ceil(num_players / cols)
         sw, sh = self.screen.get_size()
         
+        # --- THE MATHEMATICAL RATIO ALGORITHM ---
+        # Automatically tests 1-16 columns to find the largest block size possible
+        cols, rows, block_size = self.calculate_optimal_layout(num_players, sw, sh)
+        
+        # We calculate the fixed grid sizes (this leaves empty squares at the end)
         cell_w = sw // cols
         cell_h = sh // rows
-        
-        # 100px padding, żeby plansza nie uderzała w ramkę
-        block_size = min((cell_w - 100) // GRID_W, (cell_h - 100) // GRID_H)
-        block_size = max(1, block_size) 
         
         for idx, player in enumerate(self.players.values()):
             player.update(dt)
@@ -470,13 +498,14 @@ class Game:
             grid_x = idx % cols
             grid_y = idx // cols
             
+            # Strict mathematical grid position (no centering the bottom row)
             cell_x = grid_x * cell_w
             cell_y = grid_y * cell_h
             
             board_w = GRID_W * block_size
             board_h = GRID_H * block_size
             
-            # Wyrównanie planszy z lekszym przesunięciem na lewo, by zrobić miejsce dla Next Queue
+            # Center the Tetris board inside its personal strict grid cell
             x_offset = cell_x + (cell_w - board_w - 80) // 2 
             y_offset = cell_y + (cell_h - board_h) // 2 + 20
             
