@@ -293,6 +293,38 @@ class Game:
             next_idx = (current_idx + 1) % len(alive_jids)
             player.target_jid = alive_jids[next_idx]
 
+    def calculate_optimal_layout(self, num_players, sw, sh):
+        """
+        Dynamically calculates the best Grid format (Cols x Rows) to maximize the board block sizes.
+        This prevents massive empty spaces on 16:9 monitors.
+        """
+        best_block = 0
+        best_cols = 1
+        best_rows = 1
+        
+        # Test every possible combination from 1 column up to N columns
+        for c in range(1, num_players + 1):
+            r = math.ceil(num_players / c)
+            
+            cell_w = sw // c
+            cell_h = sh // r
+            
+            # 120px reserved for Right UI Panel (Next pieces, targeting info)
+            # 100px reserved for Top/Bottom UI (Names, scores, warnings)
+            max_b_w = (cell_w - 120) // GRID_W
+            max_b_h = (cell_h - 100) // GRID_H
+            
+            block = max(1, min(max_b_w, max_b_h))
+            
+            if block > best_block:
+                best_block = block
+                best_cols = c
+                best_rows = r
+                
+        # Limit the max block size so 1-2 players aren't cartoonishly huge
+        best_block = min(best_block, 40)
+        return best_cols, best_rows, best_block
+
     def run(self):
         running = True
         while running:
@@ -323,10 +355,10 @@ class Game:
                     
                     # 0: A, 1: B, 2: SELECT, 3: START
                     if self.state == "QUIT_PROMPT":
-                        if event.button == 2: # SELECT -> Potwierdź
+                        if event.button == 2: # SELECT -> Confirm
                             player.voted_yes = True
                             player.voted_no = False
-                        elif event.button == 3: # START -> Anuluj
+                        elif event.button == 3: # START -> Cancel
                             player.voted_no = True
                             player.voted_yes = False
                             
@@ -370,7 +402,7 @@ class Game:
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
-            # --- LOGIKA ŚMIECI ---
+            # --- GARBAGE LOGIC ---
             if self.state == "PLAYING":
                 for jid, p in self.players.items():
                     if p.outbound_garbage > 0:
@@ -385,7 +417,7 @@ class Game:
                             
                         p.outbound_garbage = 0
 
-            # --- RENDEROWANIE ---
+            # --- RENDERING LOGIC ---
             self.screen.fill((10, 10, 15))
             bg_state = self.previous_state if self.state == "QUIT_PROMPT" else self.state
 
@@ -454,17 +486,27 @@ class Game:
 
     def update_and_draw_playing(self, dt):
         num_players = max(1, len(self.players))
-        cols = math.ceil(math.sqrt(num_players))
-        rows = math.ceil(num_players / cols)
         sw, sh = self.screen.get_size()
-        cell_w, cell_h = sw // cols, sh // rows
-        block_size = min((cell_w - 100) // GRID_W, (cell_h - 60) // GRID_H)
+        
+        # New optimal dynamic layout scaling calculation
+        cols, rows, block_size = self.calculate_optimal_layout(num_players, sw, sh)
+        
+        cell_w = sw // cols
+        cell_h = sh // rows
         
         for idx, player in enumerate(self.players.values()):
             player.update(dt)
-            grid_x, grid_y = idx % cols, idx // cols
-            x_offset = (grid_x * cell_w) + (cell_w - (GRID_W * block_size) - 60) // 2 
-            y_offset = (grid_y * cell_h) + (cell_h - (GRID_H * block_size)) // 2 + 20
+            grid_x = idx % cols
+            grid_y = idx // cols
+            
+            # Total width and height required for this player's visual asset
+            total_player_w = (GRID_W * block_size) + 120
+            total_player_h = (GRID_H * block_size) + 100
+            
+            # Center it perfectly in its calculated sub-cell
+            x_offset = (grid_x * cell_w) + (cell_w - total_player_w) // 2 
+            y_offset = (grid_y * cell_h) + (cell_h - total_player_h) // 2 + 50 
+            
             player.draw(self.screen, x_offset, y_offset, block_size, self.block_textures, self.font, self.small_font, self.players)
 
     def draw_leaderboard(self):
