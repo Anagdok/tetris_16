@@ -9,8 +9,12 @@ FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# Font family – change here to apply everywhere
+# Change this to any system font you prefer (e.g. "Verdana", "Comic Sans MS", "Courier New")
 FONT_NAME = "Arial"
+
+# Internal padding used for layout and rendering – smaller = larger boards
+UI_WIDTH_PADDING = 80   # originally 120
+UI_HEIGHT_PADDING = 70  # originally 100
 
 SHAPES = [
     [[1, 1, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]],
@@ -217,7 +221,6 @@ class Game:
         self.screen = pygame.display.set_mode((BASE_WIDTH, BASE_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
         pygame.display.set_caption("Tetris 16-Player Battle")
         self.clock = pygame.time.Clock()
-        # Fonts using the global FONT_NAME
         self.font = pygame.font.SysFont(FONT_NAME, 24, bold=True)
         self.small_font = pygame.font.SysFont(FONT_NAME, 16)
         self.title_font = pygame.font.SysFont(FONT_NAME, 64, bold=True)
@@ -294,13 +297,13 @@ class Game:
             cell_w = sw // c
             cell_h = sh // r
             
-            max_b_w = (cell_w - 120) // GRID_W
-            max_b_h = (cell_h - 100) // GRID_H
+            max_b_w = (cell_w - UI_WIDTH_PADDING) // GRID_W
+            max_b_h = (cell_h - UI_HEIGHT_PADDING) // GRID_H
             block = max(1, min(max_b_w, max_b_h))
             
             empty_cells = (c * r) - num_players
             
-            # System Punktacji: mocno preferuje duże bloki, ale w razie remisu karze puste miejsca
+            # Heavily favour larger block sizes
             score = (block * 10) - empty_cells
             
             if score > best_score:
@@ -489,18 +492,15 @@ class Game:
             grid_y = idx // cols
             
             # --- DYNAMICZNE CENTROWANIE RZĘDÓW ---
-            # Sprawdza ile elementów jest w bieżącym rzędzie
             items_in_this_row = cols
-            if grid_y == rows - 1: # Jeśli to jest ostatni rząd
+            if grid_y == rows - 1:
                 items_in_this_row = num_players - (rows - 1) * cols
             
-            # Oblicza odstęp po bokach, żeby równo wyśrodkować niepełne rzędy na ekranie
             row_padding = (sw - (items_in_this_row * cell_w)) // 2
             
-            total_player_w = (GRID_W * block_size) + 120
-            total_player_h = (GRID_H * block_size) + 100
+            total_player_w = (GRID_W * block_size) + UI_WIDTH_PADDING
+            total_player_h = (GRID_H * block_size) + UI_HEIGHT_PADDING
             
-            # Aplikuje row_padding zamiast przyklejać wszystkich na sztywno do lewej
             x_offset = row_padding + (grid_x * cell_w) + (cell_w - total_player_w) // 2 
             y_offset = (grid_y * cell_h) + (cell_h - total_player_h) // 2 + 50 
             
