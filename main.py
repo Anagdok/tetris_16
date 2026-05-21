@@ -3,7 +3,6 @@ import random
 import math
 import sys
 import os
-os.environ["SDL_RENDER_DRIVER"] = "software"
 
 # --- CONFIGURATION ---
 FPS = 60
@@ -28,25 +27,6 @@ PLAYER_COLORS = [
     (255, 255, 255), (150, 150, 150), (255, 100, 100), (100, 255, 100),
     (100, 100, 255), (255, 200, 100), (200, 100, 255), (100, 255, 200)
 ]
-
-
-def draw_background(surface):
-    """Tworzy estetyczne, ciemne tło z delikatnym gradientem i siatką."""
-    # Gradient od ciemnego granatu do czerni
-    for y in range(BASE_HEIGHT):
-        color = (
-            int(10 + (y / BASE_HEIGHT) * 5),
-            int(10 + (y / BASE_HEIGHT) * 5),
-            int(15 + (y / BASE_HEIGHT) * 10)
-        )
-        pygame.draw.line(surface, color, (0, y), (BASE_WIDTH, y))
-
-    # Subtelna siatka w tle
-    grid_color = (25, 25, 35)
-    for x in range(0, BASE_WIDTH, 40):
-        pygame.draw.line(surface, grid_color, (x, 0), (x, BASE_HEIGHT), 1)
-    for y in range(0, BASE_HEIGHT, 40):
-        pygame.draw.line(surface, grid_color, (0, y), (BASE_WIDTH, y), 1)
 
 
 class PlayerBoard:
@@ -176,7 +156,7 @@ class PlayerBoard:
         pygame.draw.rect(surface, (255, 255, 255), board_rect.inflate(8, 8), 2)  # biała ramka
 
         # Siatka na planszy (delikatne linie)
-        grid_color = (255, 255, 255, 30)  # z alpha
+        grid_color = (255, 255, 255, 30)
         grid_surf = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
         for x in range(1, GRID_W):
             pygame.draw.line(grid_surf, grid_color, (x * cell_size, 0), (x * cell_size, GRID_H * cell_size), 1)
@@ -249,7 +229,7 @@ class Game:
         pygame.mixer.init()
         
         self.screen = pygame.display.set_mode((BASE_WIDTH, BASE_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
-        pygame.display.set_caption("TETRIS TETRIS TETRIS")   # <-- Nowy tytuł
+        pygame.display.set_caption("TETRIS TETRIS TETRIS")
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(FONT_NAME, 24, bold=True)
         self.small_font = pygame.font.SysFont(FONT_NAME, 16)
@@ -432,7 +412,7 @@ class Game:
                         p.outbound_garbage = 0
 
             # --- RENDEROWANIE ---
-            draw_background(self.screen)   # <-- nowe tło
+            self.screen.fill((10, 10, 15))   # szybkie jednolite tło
             bg_state = self.previous_state if self.state == "QUIT_PROMPT" else self.state
 
             if bg_state == "MENU":
