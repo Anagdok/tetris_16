@@ -306,9 +306,16 @@ class Game:
             cell_w = sw // c
             cell_h = sh // r
             
-            max_b_w = (cell_w - UI_WIDTH_PADDING) // GRID_W
+            # --- NOWA LOGIKA: priorytet wysokości ---
             max_b_h = (cell_h - UI_HEIGHT_PADDING) // GRID_H
-            block = max(1, min(max_b_w, max_b_h))
+            needed_w = max_b_h * GRID_W + UI_WIDTH_PADDING
+            
+            if needed_w <= cell_w:
+                block = max_b_h
+            else:
+                max_b_w = (cell_w - UI_WIDTH_PADDING) // GRID_W
+                block = max(1, min(max_b_w, max_b_h))
+            # ------------------------------------
             
             empty_cells = (c * r) - num_players
             score = (block * 10) - empty_cells
