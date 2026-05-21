@@ -9,12 +9,12 @@ FPS = 60
 BASE_WIDTH, BASE_HEIGHT = 1920, 1080
 GRID_W, GRID_H = 10, 20
 
-# Change this to any system font you prefer (e.g. "Verdana", "Comic Sans MS", "Courier New")
+# Global font family – change here to apply everywhere
 FONT_NAME = "Arial"
 
-# Internal padding used for layout and rendering – smaller = larger boards
-UI_WIDTH_PADDING = 80   # originally 120
-UI_HEIGHT_PADDING = 70  # originally 100
+# Padding around each player board (used for layout calculations)
+UI_WIDTH_PADDING = 80
+UI_HEIGHT_PADDING = 70
 
 SHAPES = [
     [[1, 1, 1, 1]], [[1, 0, 0], [1, 1, 1]], [[0, 0, 1], [1, 1, 1]],
@@ -28,6 +28,26 @@ PLAYER_COLORS = [
     (100, 100, 255), (255, 200, 100), (200, 100, 255), (100, 255, 200)
 ]
 
+
+def draw_background(surface):
+    """Tworzy estetyczne, ciemne tło z delikatnym gradientem i siatką."""
+    # Gradient od ciemnego granatu do czerni
+    for y in range(BASE_HEIGHT):
+        color = (
+            int(10 + (y / BASE_HEIGHT) * 5),
+            int(10 + (y / BASE_HEIGHT) * 5),
+            int(15 + (y / BASE_HEIGHT) * 10)
+        )
+        pygame.draw.line(surface, color, (0, y), (BASE_WIDTH, y))
+
+    # Subtelna siatka w tle
+    grid_color = (25, 25, 35)
+    for x in range(0, BASE_WIDTH, 40):
+        pygame.draw.line(surface, grid_color, (x, 0), (x, BASE_HEIGHT), 1)
+    for y in range(0, BASE_HEIGHT, 40):
+        pygame.draw.line(surface, grid_color, (0, y), (BASE_WIDTH, y), 1)
+
+
 class PlayerBoard:
     def __init__(self, nickname, joystick, player_id):
         self.nickname = nickname
@@ -35,7 +55,7 @@ class PlayerBoard:
         self.color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
         self.ready = False
         
-        # Voting Flags
+        # Voting flags
         self.voted_quit = False
         self.voted_yes = False
         self.voted_no = False
@@ -151,11 +171,19 @@ class PlayerBoard:
     def draw(self, surface, x_offset, y_offset, cell_size, block_textures, font, small_font, players_dict, is_menu=False):
         board_rect = pygame.Rect(x_offset, y_offset, GRID_W * cell_size, GRID_H * cell_size)
         pygame.draw.rect(surface, (20, 20, 20), board_rect)
-        # Player colour border
-        pygame.draw.rect(surface, self.color, board_rect, 4)
-        # White outline so each player's board stands out clearly
-        pygame.draw.rect(surface, (255, 255, 255), board_rect.inflate(8, 8), 2)
+        pygame.draw.rect(surface, self.color, board_rect, 4)   # kolor gracza
+        pygame.draw.rect(surface, (255, 255, 255), board_rect.inflate(8, 8), 2)  # biała ramka
 
+        # Siatka na planszy (delikatne linie)
+        grid_color = (255, 255, 255, 30)  # z alpha
+        grid_surf = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
+        for x in range(1, GRID_W):
+            pygame.draw.line(grid_surf, grid_color, (x * cell_size, 0), (x * cell_size, GRID_H * cell_size), 1)
+        for y in range(1, GRID_H):
+            pygame.draw.line(grid_surf, grid_color, (0, y * cell_size), (GRID_W * cell_size, y * cell_size), 1)
+        surface.blit(grid_surf, (x_offset, y_offset))
+
+        # Rysowanie bloków
         for y in range(GRID_H):
             for x in range(GRID_W):
                 c_idx = self.board[y][x]
@@ -170,16 +198,17 @@ class PlayerBoard:
                         tex = pygame.transform.scale(block_textures[self.color_index-1], (cell_size, cell_size))
                         surface.blit(tex, (x_offset + (self.piece_x + x) * cell_size, y_offset + (self.piece_y + y) * cell_size))
 
+        # Nick i punkty
         name_text = font.render(self.nickname, True, self.color)
         score_text = small_font.render(f"Pkt: {self.score}", True, (255, 255, 255))
         surface.blit(name_text, (x_offset, y_offset - 40))
         surface.blit(score_text, (x_offset, y_offset - 20))
 
-        # Pokazuj informację o głosowaniu TYLKO w Menu
         if is_menu and self.voted_quit:
             vote_text = small_font.render("CHCE WYJŚĆ", True, (255, 50, 50))
             surface.blit(vote_text, (x_offset, y_offset - 60))
 
+        # Kolejka klocków
         next_x = x_offset + (GRID_W * cell_size) + 10
         next_y = y_offset
         for shape, color_idx in self.piece_queue:
@@ -190,20 +219,20 @@ class PlayerBoard:
                         surface.blit(tex, (next_x + x*(cell_size//2), next_y + y*(cell_size//2)))
             next_y += 4 * (cell_size // 2)
 
+        # Informacje o celu i śmieciach (tylko w grze)
         if self.alive and not is_menu:
             if self.target_jid and self.target_jid in players_dict:
                 target = players_dict[self.target_jid]
                 if target.alive:
                     target_label = small_font.render("CEL:", True, (150, 150, 150))
                     target_name = small_font.render(target.nickname, True, target.color)
-                    
                     surface.blit(target_label, (next_x, next_y + 10))
                     surface.blit(target_name, (next_x, next_y + 30))
-            
             if self.incoming_garbage > 0:
                 warn_text = font.render(f"! ŚMIECI: {self.incoming_garbage} !", True, (255, 50, 50))
                 surface.blit(warn_text, (x_offset, y_offset + (GRID_H * cell_size) + 5))
 
+        # Ekran śmierci
         if not self.alive:
             s = pygame.Surface((GRID_W * cell_size, GRID_H * cell_size), pygame.SRCALPHA)
             s.fill((0, 0, 0, 180))
@@ -219,7 +248,7 @@ class Game:
         pygame.mixer.init()
         
         self.screen = pygame.display.set_mode((BASE_WIDTH, BASE_HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
-        pygame.display.set_caption("Tetris 16-Player Battle")
+        pygame.display.set_caption("TETRIS TETRIS TETRIS")   # <-- Nowy tytuł
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont(FONT_NAME, 24, bold=True)
         self.small_font = pygame.font.SysFont(FONT_NAME, 16)
@@ -260,7 +289,6 @@ class Game:
             p.voted_no = False
 
     def start_game(self):
-        # Przed startem gry, zresetuj również wszystkie głosy za wyjściem
         self.reset_all_votes()
         for p in self.players.values(): 
             p.reset()
@@ -302,8 +330,6 @@ class Game:
             block = max(1, min(max_b_w, max_b_h))
             
             empty_cells = (c * r) - num_players
-            
-            # Heavily favour larger block sizes
             score = (block * 10) - empty_cells
             
             if score > best_score:
@@ -363,7 +389,7 @@ class Game:
                             
                     else:
                         if self.state == "MENU":
-                            if event.button == 2: # SELECT -> Głosowanie Quit działa TYLKO W MENU
+                            if event.button == 2: # SELECT -> Głosowanie Quit
                                 player.voted_quit = not player.voted_quit
                                 majority = (len(self.players) // 2) + 1
                                 if sum(1 for p in self.players.values() if p.voted_quit) >= majority:
@@ -378,30 +404,34 @@ class Game:
                             elif event.button == 1: player.rotate_piece() # B
                             elif event.button == 2: # SELECT -> Celowanie
                                 self.cycle_target(event.instance_id)
-                            # Usunięto event.button == 3 dla stanu PLAYING - gracze nie mogą pauzować meczu
                                 
                         elif self.state == "LEADERBOARD":
                             if event.button == 3: # START
                                 self.state = "MENU"
                                 for p in self.players.values(): p.ready = False
 
-            # --- LOGIKA ŚMIECI ---
+            # --- Automatyczne przypisywanie celu, jeśli stary cel nie żyje ---
+            if self.state == "PLAYING":
+                for p in self.players.values():
+                    if p.alive:
+                        target = self.players.get(p.target_jid)
+                        if not target or not target.alive:
+                            self._assign_random_target(p)
+
+            # --- Logika śmieci ---
             if self.state == "PLAYING":
                 for jid, p in self.players.items():
                     if p.outbound_garbage > 0:
                         target = self.players.get(p.target_jid)
-                        
                         if not target or not target.alive:
                             self._assign_random_target(p)
                             target = self.players.get(p.target_jid)
-                            
                         if target and target.alive:
                             target.incoming_garbage += p.outbound_garbage
-                            
                         p.outbound_garbage = 0
 
             # --- RENDEROWANIE ---
-            self.screen.fill((10, 10, 15))
+            draw_background(self.screen)   # <-- nowe tło
             bg_state = self.previous_state if self.state == "QUIT_PROMPT" else self.state
 
             if bg_state == "MENU":
@@ -411,7 +441,6 @@ class Game:
             elif bg_state == "LEADERBOARD":
                 self.draw_leaderboard()
 
-            # Powiadomienie o głosowaniu pokazujemy tylko w Menu
             if self.state == "MENU":
                 total_quit_votes = sum(1 for p in self.players.values() if p.voted_quit)
                 if total_quit_votes > 0:
@@ -422,7 +451,7 @@ class Game:
             if self.state == "QUIT_PROMPT":
                 self.draw_quit_prompt()
 
-            # Logika przejścia stanów
+            # Przejścia między stanami
             if self.state == "MENU":
                 if len(self.players) > 0 and all(p.ready for p in self.players.values()):
                     self.start_game()
@@ -442,7 +471,7 @@ class Game:
         self.screen.blit(s, (0, 0))
         
         y_center = BASE_HEIGHT // 2
-        t1 = self.title_font.render("CZY NA PEWNO CHCESZ WYŁĄCZYĆ GRĘ?", True, (255, 50, 50))
+        t1 = self.title_font.render("CZY NA PEWNO CHCESZ WYŁĄCZYĆ GRĘ DO SYSTEMU?", True, (255, 50, 50))
         t2 = self.font.render("Wciśnij SELECT by potwierdzić. Wciśnij START by anulować.", True, (255, 255, 255))
         
         self.screen.blit(t1, (BASE_WIDTH//2 - t1.get_width()//2, y_center - 100))
@@ -456,24 +485,35 @@ class Game:
         self.screen.blit(v_text, (BASE_WIDTH//2 - v_text.get_width()//2, y_center + 50))
 
     def draw_menu(self):
-        title = self.title_font.render("TETRIS", True, (255, 255, 255))
+        # Wielki tytuł
+        title = self.title_font.render("TETRIS TETRIS TETRIS", True, (255, 215, 0))
         self.screen.blit(title, (BASE_WIDTH//2 - title.get_width()//2, 100))
-        info = self.font.render("START: Gotowość | SELECT: Głosuj za wyłącze", True, (150, 150, 150))
-        self.screen.blit(info, (BASE_WIDTH//2 - info.get_width()//2, 180))
-        
-        y = 300
+
+        # Instrukcje
+        instructions = [
+            "Witaj w Tetris Battle!",
+            "Aby dołączyć do gry, podłącz gamepad i naciśnij START.",
+            "Gdy wszyscy gracze będą GOTOWI (nacisną START), gra wystartuje automatycznie.",
+            "W grze: A = twardy drop, B = obrót, SELECT = zmiana celu.",
+            "W menu: START = gotowość, SELECT = głosowanie za wyjściem do systemu.",
+        ]
+        y = 220
+        for line in instructions:
+            text = self.small_font.render(line, True, (200, 200, 200))
+            self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
+            y += 30
+
+        # Lista graczy
+        y = 420
         square_w = 20
         gap = 10
         for p in self.players.values():
             status = "GOTOWY" if p.ready else "OCZEKUJE..."
             color = (50, 255, 50) if p.ready else (255, 50, 50)
             text = self.font.render(f"{p.nickname} - {status}", True, color)
-            # Centre the coloured square + text as one block
             total_w = square_w + gap + text.get_width()
             start_x = BASE_WIDTH//2 - total_w//2
-            # Draw colour indicator (the player's randomly assigned colour)
             pygame.draw.rect(self.screen, p.color, (start_x, y, square_w, square_w))
-            # Draw the text next to it
             self.screen.blit(text, (start_x + square_w + gap, y))
             y += 40
 
@@ -482,7 +522,6 @@ class Game:
         sw, sh = self.screen.get_size()
         
         cols, rows, block_size = self.calculate_optimal_layout(num_players, sw, sh)
-        
         cell_w = sw // cols
         cell_h = sh // rows
         
@@ -491,7 +530,6 @@ class Game:
             grid_x = idx % cols
             grid_y = idx // cols
             
-            # --- DYNAMICZNE CENTROWANIE RZĘDÓW ---
             items_in_this_row = cols
             if grid_y == rows - 1:
                 items_in_this_row = num_players - (rows - 1) * cols
@@ -517,6 +555,7 @@ class Game:
             text = self.font.render(f"{idx + 1}. {p.nickname} - Pkt: {p.score}", True, color)
             self.screen.blit(text, (BASE_WIDTH//2 - text.get_width()//2, y))
             y += 50
+
 
 if __name__ == "__main__":
     game = Game()
