@@ -3,6 +3,7 @@ import random
 import math
 import sys
 import os
+os.environ["SDL_RENDER_DRIVER"] = "software"
 
 # --- CONFIGURATION ---
 FPS = 60
