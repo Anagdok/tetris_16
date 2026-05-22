@@ -459,7 +459,7 @@ class Game:
         self.screen.blit(s, (0, 0))
         
         y_center = BASE_HEIGHT // 2
-        t1 = self.title_font.render("CZY NA PEWNO CHCESZ WYŁĄCZYĆ GRĘ DO SYSTEMU?", True, (255, 50, 50))
+        t1 = self.title_font.render("CZY NA PEWNO CHCESZ WYŁĄCZYĆ GRĘ ?", True, (255, 50, 50))
         t2 = self.font.render("Wciśnij SELECT by potwierdzić. Wciśnij START by anulować.", True, (255, 255, 255))
         
         self.screen.blit(t1, (BASE_WIDTH//2 - t1.get_width()//2, y_center - 100))
@@ -482,8 +482,8 @@ class Game:
             "Witaj w Tetris Battle!",
             "Aby dołączyć do gry, podłącz gamepad i naciśnij START.",
             "Gdy wszyscy gracze będą GOTOWI (nacisną START), gra wystartuje automatycznie.",
-            "W grze: A = twardy drop, B = obrót, SELECT = zmiana celu.",
-            "W menu: START = gotowość, SELECT = głosowanie za wyjściem do systemu.",
+            "W grze: A = twardy drop, B = obrót, SELECT = zmiana przeciwnika.",
+            "W menu: START = gotowość, SELECT = głosowanie za wyjściem z gry.",
         ]
         y = 220
         for line in instructions:
